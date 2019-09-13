@@ -15,32 +15,35 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
     }
 
     // Get all shopify products, store them so we can cycle through them and find our products by sku later on
-    function getShopifyProducts(){ 
+    async function getShopifyProducts(){
         let requestType = "GET",
-        endpoint = "/admin/api/2019-04/products/count.json",
-        productCount,
-        pageCount;
+        endpoint = "/admin/api/2019-10/products/count.json",
+        countData = await sendRequest(requestType, endpoint),
+        productCount = countData.count;
+
+        endpoint = "/admin/api/2019-10/products.json?&limit=250&direction=next&order=title asc";
+
+        // Since we cant get all products in one call, I'm batching by shopify's max of 250 until we reach our product count
+        async function batchShopProducts(){
+            const shopData = await sendRequest(requestType, endpoint);
+            
+            shopData.products.forEach(function(product){
+                shopifyProducts.push(product);
+            });
+            
+            if(shopifyProducts.length > 0){
+                shopifyLastProduct = shopifyProducts[shopifyProducts.length - 1];
+                endpoint = "/admin/api/2019-10/products.json?&limit=250&direction=next&order=title asc&last_id=" + shopifyLastProduct.id + "&last_value=" + shopifyLastProduct.title;
+            }
+            if(shopifyProducts.length !== productCount){
+                batchShopProducts();
+            } else {
+                window.localStorage.setItem('RsProductStore', JSON.stringify(shopifyProducts));
+            }
+        }
 
         if(window.localStorage.getItem('RsProductStore') === null){
-            sendRequest(requestType, endpoint).then(function(data){
-                productCount = data.count;
-                if(productCount > 250){
-                    pageCount = Math.ceil(productCount / 250);
-                } else {
-                    pageCount = 1;   
-                }
-
-                for(let i = 1; i <= pageCount; i++){
-                    endpoint = "/admin/api/2019-04/products.json?limit=250&page=" + i;
-                    sendRequest(requestType, endpoint).then(function(data){
-                        data.products.forEach(function(product){
-                            shopifyProducts.push(product);
-                        });
-
-                        window.localStorage.setItem('RsProductStore', JSON.stringify(shopifyProducts));
-                    });
-                }
-            });
+            batchShopProducts();
         } else {
             shopifyProducts = JSON.parse(window.localStorage.getItem('RsProductStore'));
         }
@@ -84,7 +87,7 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
     }
 
     // Check shopify for our RS showcase selected products.
-    function getProductBySku(rsProduct){ 
+    function getProductBySku(rsProduct){
         let rsProductSku,
         rsProductQuantity = rsProduct.Quantity,
         returnProduct;
@@ -109,7 +112,7 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
     }
 
     // Add our products to the shopify cart
-    function addProductToCart(product){ 
+    function addProductToCart(product){
         let request = new XMLHttpRequest(),
         endpoint = "/cart/add.js",
         formData = new FormData(),
@@ -134,7 +137,7 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
     }
 
     // Template for api requests
-    function sendRequest(type, endpoint, formData, sync){ 
+    function sendRequest(type, endpoint, formData, sync){
         let request = new XMLHttpRequest(),
         url = "https://" + options.url + endpoint;
 
@@ -152,7 +155,7 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
     }
 
     // Redirect to shopify cart
-    function goToCart(){ 
+    function goToCart(){
         window.location.href = "/cart";
     }
 
@@ -163,7 +166,7 @@ RideStylerShowcase.registerPlugin("Shopify", function (showcaseInstance, pluginP
 
         for(let i=0;i<errors.length;i++){
             if(errorMessage !== undefined){
-                errorMessage += (errors[i] + "\n");
+                errorMessage += (errors[i]);
             } else {
                 errorMessage = errors[i];
             }
